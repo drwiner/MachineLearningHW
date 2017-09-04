@@ -55,7 +55,7 @@ def even_length_lastname(lb):
 	return False
 
 
-# Set of Features
+# Set of Features, initially
 FEATURES = [firstname_longer_lastname,
             has_middle_name,
             same_first_and_last_letter,
@@ -131,11 +131,12 @@ def ID3(samples, features):
 	sub_class_pos = {lbl for lbl in samples if best_f(lbl) is True}
 	if len(sub_class_pos) == len(samples):
 		pos_child = True
+	# elif there's no samples, then choose most common label as generalization
 	elif len(sub_class_pos) == 0:
 		if num_samples_with_label(samples, '+') > num_samples_with_label(samples, '-'):
-			return {'feature': best_f, 1: True, 0: False}
+			pos_child = True
 		else:
-			return {'feature': best_f, 0: True, 1: False}
+			pos_child = False
 	else:
 		pos_child = ID3(sub_class_pos, set(features) - set(best_f))
 
@@ -143,31 +144,30 @@ def ID3(samples, features):
 	sub_class_neg = {lbl for lbl in samples if best_f(lbl) is False}
 	if len(sub_class_neg) == len(samples):
 		neg_child = True
+	# elif there's no samples, then choose most common label as generalization
 	elif len(sub_class_neg) == 0:
 		if num_samples_with_label(samples, '+') > num_samples_with_label(samples, '-'):
-			return {'feature': best_f, 1: True, 0: False}
+			neg_child = False
 		else:
-			return {'feature': best_f, 0: True, 1: False}
+			neg_child = True
 	else:
 		neg_child = ID3(sub_class_neg, set(features) - set(best_f))
 
 	return {'feature': best_f, 1: pos_child, 0: neg_child}
 
 
-# go through tree
-def decision_tree(tree, item):
+def use_tree(tree, item):
+
 	# base case, the tree is a value
-	if tree is True:
-		return True
-	elif tree is False:
-		return False
+	if type(tree) is bool:
+		return tree
 
 	# otherwise, recursively evaluate item with features
 	result = tree['feature'](item)
 	if result:
-		return decision_tree(tree[1], item)
+		return use_tree(tree[1], item)
 	else:
-		return decision_tree(tree[0], item)
+		return use_tree(tree[0], item)
 
 
 if __name__ == '__main__':
@@ -181,6 +181,9 @@ if __name__ == '__main__':
 			else:
 				lb = Label(sp[0], sp[1], None, sp[2])
 			training_data.append(lb)
+
+	dtree = ID3(FEATURES, training_data)
+
 
 
 
