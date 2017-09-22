@@ -1,0 +1,39 @@
+\section{Mistake Bound Model of Learning}\label{sec:q2}
+
+\begin{enumerate}
+    \item~[20 points] Consider an instance space consisting of integer points on the two dimensional plane $(x_1,x_2)$ with $ -80 \le x_1,x_2 \le 80$.
+        Let $\mathcal{C}$ be a concept class defined on this instance space. Each function $f_l$ in $\mathcal{C}$ is defined by a length $l$ (with $1\le l\le 80$) as follows:
+        \begin{equation}
+            f_l(x_1,x_2) = \begin{cases}
+                +1 \quad \vert x_1\vert \le l \text{ and } \vert x_2\vert \le l \\
+                -1 \quad \text{otherwise}
+            \end{cases}
+            \label{eq-0}
+        \end{equation}
+        Our goal is to come up with a error-driven algorithm that will learn the correct function $f\in\mathcal{C}$ that correctly classifies a dataset.
+
+        \textbf{Side notes}
+        \begin{enumerate}
+            \item Recall that a concept class is the set of functions from which the true target function is drawn and the hypothesis space is the set of functions that the learning algorithm searches over. In this question, both these are the same set.
+            \item Assume that there is no noise. That is, assume that the data is separable using the hypothesis class.
+        \end{enumerate}
+
+        \textbf{Questions}
+        \begin{enumerate}
+            \item~[5 points] Determine $\vert\mathcal{C}\vert$, the size of concept class.
+            \item~[5 points] To design an error driven learning algorithm, we should be able to first write down what it means to make a mistake. Suppose our current guess for the function is $f_l$ defined as in Equation~\ref{eq-0} above. Say we get an input point $(x^t_1,x^t_2)$ along with its label $y^t$. Write down an expression (an equality or an inequality) in terms of $x^t_1, x^t_2, y^t$ and $l$ that checks whether the current hypothesis $f_l$ has made a mistake.
+            \item~[5 points] Next, we need to specify how we will update a hypothesis if there is an error. Since $f_l$ is completely defined in terms of $l$, we only need to update $l$. How will you update $l$ if there is an error? Consider errors for both positive and negative examples.
+            \item~[5 points] Use the answers from the previous two steps to write a mistake-driven learning algorithm to learn the function. Please write the algorithm concisely in the form of pseudocode. What is the maximum number of mistakes that this algorithm can make on any dataset?
+        \end{enumerate}
+
+    \item~[20 points] Recall from class that the Halving algorithm assumes that there is the true (hidden) function is in the concept class $\mathcal{C}$ with $N$ elements and tries to find it. In this setting, we know the number of mistakes made by the algorithm is $O(\log N)$.
+        Another way to think about this setting is that we are trying to predict with expert advice. That is, we have a pool of $N$ so called experts, only one of whom is perfect. As the halving algorithm proceeds, it cuts down this pool by at least half each time a mistake is made.
+
+        Suppose, instead of one perfect expert, we have M perfect experts in our pool. Show that the mistake bound of the same Halving algorithm in this case is $O(\log\frac{N}{M})$.
+        (Hint: To show this, consider the stopping condition of the algorithm. At what point, will the algorithm stop making mistakes?)
+\end{enumerate}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "hw"
+%%% End:
