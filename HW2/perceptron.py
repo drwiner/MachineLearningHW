@@ -5,9 +5,10 @@
 
 from collections import namedtuple, defaultdict
 import numpy as np
+from functools import partial
 
 # LabeledEx = namedtuple('LabeledEx', ['label', 'feature_dict'])
-LabeledEx = namedtuple('LabeledEx', ['label', 'feature_vec'])
+LabeledEx = namedtuple('LabeledEx', ['label', 'feat_vec'])
 
 #### HELPER METHODS ####
 
@@ -42,7 +43,7 @@ def dot_dict(d1, d2, n):
 
 
 # extract labeled examples from data file
-def get_data(data_file_name):
+def get_data(data_file_name, largest_size=None):
 	data = []
 	with open(data_file_name, 'r') as training_data_file:
 		for line in training_data_file:
@@ -52,12 +53,16 @@ def get_data(data_file_name):
 			data.append(example_tup)
 
 	# now, find the maximum size vector and pad all others
-	n = get_longest_vec(data)
+	if largest_size is None:
+		n = get_longest_vec(data)
+	else:
+		n = largest_size
+
 	training_data = []
 	for example in data:
 		precursor_list = example.feat_vec
 		if len(example.feat_vec) < n:
-			precursor_list.expand([0 for j in range(n-len(example.feat_vec))])
+			precursor_list.extend([0 for j in range(n-len(example.feat_vec))])
 			if len(precursor_list) != n:
 				raise ArithmeticError('bad arithmetic')
 		training_data.append(LabeledEx(example[0], np.array(precursor_list)))
@@ -96,76 +101,366 @@ def update_weights(w, lr, label, feat_vec):
 	return new_w
 
 
-def simple_perceptron_wrapper(examples, epochs):
-	learning_rates = [1, 0.1, 0.01]
+def simple_perceptron_wrapper(examples, learning_rates, epochs):
+	# learning_rates = [1, 0.1, 0.01]
 
 	# examples are precompiled to have correct length
 	num_feats = len(examples[0].feat_vec)
 
 	# initialize weights
-	weights = np.array([0 for j in range(num_feats)])
+	weights = np.array([0.001 for j in range(num_feats)])
+
+	bias = 0.001
 
 	# run perceptron for each learning rate
-	w_values = [simple_perceptron(examples, weights, lr, epochs) for lr in learning_rates]
+	w_values = [simple_perceptron(examples, weights, bias, lr, epochs) for lr in learning_rates]
 
 	return w_values
 
 
-def simple_perceptron(examples, weights, learning_rate, epochs):
-
+def simple_perceptron(examples, weights, bias, learning_rate, epochs, pc_test=None):
+	num_errors = 0
 	for epoch in range(epochs):
-		# weights = before each epoch; initialize w_prime as weights before each epoch
-		w_prime = weights
+
 		for example in examples:
-			y_prime = np.dot(weights, example.feat_vec)
-			if y_prime >= 0:
+			y_prime = np.dot(np.transpose(weights), example.feat_vec) + bias
+
+			if y_prime > 0:
 				y_prime = 1
 			else:
-				y_prime = 0
-			if y_prime != examples.label:
-				# update weights
-				w_prime = update_weights(w_prime, learning_rate, examples.label, examples.feat_vec)
+				y_prime = -1
 
-		# BATCH : update weights only after each epoch
-		weights = w_prime
-	return weights
+			if y_prime != example.label:
+				num_errors += 1
+				# update weights + bias
+				weights = update_weights(weights, learning_rate, example.label, example.feat_vec)
+				bias = bias + learning_rate*example.label
 
-
-def simple_perceptron_test():
-	pass
+		if pc_test is not None:
+			print('{}\t{}'.format(epoch, pc_test(weight_vector=weights, bias=bias)))
 
 
-def cross_validate(cv_split, perceptron_method, pc_test, epochs):
-	results = []
+	print('updates:\t{}'.format(num_errors))
+	return weights, bias
+
+
+def dynamic_perceptron_wrapper(examples, learning_rates, epochs):
+	# examples are precompiled to have correct length
+	num_feats = len(examples[0].feat_vec)
+
+	# initialize weights
+	weights = np.array([0.001 for j in range(num_feats)])
+
+	bias = 0.001
+
+	# run perceptron for each learning rate
+	w_values = [dynamic_perceptron(examples, weights, bias, lr, epochs) for lr in learning_rates]
+
+	return w_values
+
+
+def dynamic_perceptron(examples, weights, bias, learning_rate, epochs, pc_test=None):
+	num_errors = 0
+	t = 0
+	for epoch in range(epochs):
+
+		for example in examples:
+			y_prime = np.dot(np.transpose(weights), example.feat_vec) + bias
+
+			if y_prime > 0:
+				y_prime = 1
+			else:
+				y_prime = -1
+
+			if y_prime != example.label:
+				num_errors += 1
+				# update weights + bias
+				lr = learning_rate / (1 + t)
+				weights = update_weights(weights, lr, example.label, example.feat_vec)
+				bias = bias + lr*example.label
+
+				t += 1
+
+		if pc_test is not None:
+			print('{}\t{}'.format(epoch, pc_test(weight_vector=weights, bias=bias)))
+
+
+	print('updates:\t{}'.format(num_errors))
+	return weights, bias
+
+
+def margin_perceptron_wrapper(examples, learning_rates, epochs):
+	# examples are precompiled to have correct length
+	num_feats = len(examples[0].feat_vec)
+
+	# initialize weights
+	weights = np.array([0.001 for j in range(num_feats)])
+
+	bias = 0.001
+
+	# run perceptron for each learning rate
+	w_values = [margin_perceptron(examples, weights, bias, lr1, lr2, epochs) for lr1 in learning_rates for lr2 in learning_rates]
+
+	return w_values
+
+
+def margin_perceptron(examples, weights, bias, learning_rate, margin, epochs, pc_test=None):
+	# print('learning_rate:\t{}\nmargin:\t{}'.format(learning_rate, margin))
+	num_errors = 0
+	t = 0
+	for epoch in range(epochs):
+
+		for example in examples:
+			y_prime = np.dot(np.transpose(weights), example.feat_vec) + bias
+
+			if (y_prime * example.label) < margin:
+				num_errors += 1
+				# update weights + bias
+				lr = learning_rate / (1 + t)
+				weights = update_weights(weights, lr, example.label, example.feat_vec)
+				bias = bias + lr*example.label
+
+				t += 1
+
+		if pc_test is not None:
+			print('{}\t{}'.format(epoch, pc_test(weight_vector=weights, bias=bias)))
+
+	print('lr, margin, updates:\t{}\t{}\t{}'.format(learning_rate, margin, num_errors))
+	return weights, bias
+
+
+def avgd_perceptron_wrapper(examples, learning_rates, epochs):
+	num_feats = len(examples[0].feat_vec)
+
+	# initialize weights
+	weights = np.array([0.001 for j in range(num_feats)])
+	avg_weights = weights
+
+	bias = 0.001
+	avg_bias = 0.001
+
+	# run perceptron for each learning rate
+	w_values = [avgd_perceptron(examples, [weights, avg_weights], [bias, avg_bias], lr, epochs) for lr in learning_rates]
+
+	return w_values
+
+
+def avgd_perceptron(examples, weights, bias, learning_rate, epochs, pc_test=None):
+	print('learning_rate:\t{}'.format(learning_rate))
+	num_errors = 0
+	for epoch in range(epochs):
+
+		for example in examples:
+			y_prime = np.dot(np.transpose(weights[0]), example.feat_vec) + bias[0]
+
+			if y_prime > 0:
+				y_prime = 1
+			else:
+				y_prime = -1
+
+			if y_prime != example.label:
+				num_errors += 1
+				# update weights + bias
+				weights[0] = update_weights(weights[0], learning_rate, example.label, example.feat_vec)
+				bias[0] = bias[0] + learning_rate * example.label
+
+			# update every example no matter what
+			weights[1] += weights[0]
+			bias[1] += bias[0]
+
+		if pc_test is not None:
+			print('{}\t{}'.format(epoch, pc_test(weight_vector=weights[1], bias=bias[1])))
+
+	print('updates:\t{}'.format(num_errors))
+	return weights[1], bias[1]
+
+
+def aggr_perceptron_wrapper(examples, learning_rates, epochs):
+	num_feats = len(examples[0].feat_vec)
+
+	# initialize weights
+	weights = np.array([0.001 for j in range(num_feats)])
+
+	bias = 0.001
+
+	# run perceptron for each learning rate
+	w_values = [aggr_perceptron(examples, weights, bias, lr, margin, epochs) for lr in
+	            learning_rates for margin in learning_rates]
+
+	return w_values
+
+
+def aggr_perceptron(examples, weights, bias, learning_rate, margin, epochs, pc_test=None):
+	# print('learning_rate X margin:\t{}\t{}'.format(learning_rate, margin))
+	num_errors = 0
+	for epoch in range(epochs):
+
+		for example in examples:
+			w_dot_x = np.dot(np.transpose(weights), example.feat_vec)
+
+			if (y_prime * example.label) <= margin:
+				num_errors += 1
+				# update weights + bias
+				lr_num = margin - example.label * w_dot_x
+				lr_denom = np.dot(np.transpose(example.feat_vec), example.feat_vec) + 1
+				lr = lr_num / lr_denom
+				weights = update_weights(weights, lr, example.label, example.feat_vec)
+				bias += lr * example.label
+
+		if pc_test is not None:
+			print('{}\t{}'.format(epoch, pc_test(weight_vector=weights, bias=bias)))
+
+	print('lr, margin, updates:\t{}\t{}\t{}'.format(learning_rate, margin, num_errors))
+	return weights, bias
+
+
+def perceptron_test(test_data, weight_vector, bias):
+	# for each test example,
+	correct = 0
+
+	for test_item in test_data:
+		# if len(test_item.feat_vec) > len(weight_vector):
+		if np.dot(np.transpose(weight_vector), test_item.feat_vec) + bias > 0:
+			y_prime = 1
+		else:
+			y_prime = -1
+
+		if y_prime == test_item.label:
+			correct += 1
+
+	return correct / len(test_data)
+
+
+def cross_validate(cv_split, perceptron_method, pc_test, epochs, margins=None):
+	learning_rates = [1, 0.1, 0.01]
+	results = [[], [], []]
+	if margins is not None:
+		results.extend([[], [], [], [], [], []])
 
 	# each 'i' is test
-	for i in range(4):
+	for i in range(len(cv_split)):
 		# each 'j' is training
 		training = []
-		for j in range(4):
+		for j in range(len(cv_split)):
 			if i == j:
 				continue
 			training.extend(cv_split[j])
 
 		# train with 4/5
-		weight_vals = perceptron_method(training, epochs)
+		# this weight_vals_list has a position for each learning rate
+		print(i)
+		weight_vals_list = perceptron_method(training, learning_rates, epochs)
 
 		# test on i
-		result = pc_test(cv_split[i], weight_vals)
-		results.append(result)
+		for j, weight_val in enumerate(weight_vals_list):
 
+			# weight_val[0] is weight vector; weight_val[1] is bias
+			result_acc = pc_test(cv_split[i], weight_val[0], weight_val[1])
+
+			# add result to result vector (whose indices correspond to each learning rate)
+			results[j].append(result_acc)
+
+
+	avg_results = []
 	# avg over results
-	pass
+	for lr_results in results:
+		# each lr_results is a different learning rate
+		avg_acc = sum(lr_results) / len(cv_split)
+		avg_results.append(avg_acc)
 
+	# avg_results should be a list with 3 values, one for each learning rate.
+	return avg_results
 
 
 if __name__ == '__main__':
-	training_dev = get_data('DataSet//phishing.dev')
+	num_feats = 70
+	training_dev = get_data('DataSet//phishing.dev', largest_size=num_feats)
+	training_train = get_data('DataSet//phishing.train', largest_size=num_feats)
+	training_test = get_data('DataSet//phishing.test', largest_size=num_feats)
+
+	# get the longest vector to guarantee that weight vectors and examples are always the same length
+	# largest_size = max(get_longest_vec(training_dev), get_longest_vec(training_test), get_longest_vec(training_train))
 
 	training_cross_val = []
-	for i in range(4):
-		fold = get_data('DataSet//CVSplits//training0{}.data'.format(str(i)))
+	for i in range(5):
+		fold = get_data('DataSet//CVSplits//training0{}.data'.format(str(i)), largest_size=num_feats)
 		training_cross_val.append(fold)
 
-	# 1. Simple Perceptron
-	cross_validate(training_cross_val, simple_perceptron_wrapper, simple_perceptron_test, 10)
+	do_simple = False
+	do_dynamic = False
+	do_margin = False
+	do_averaged = False
+	do_aggr_avg = True
+
+	if do_simple:
+		# 1. Simple Perceptron
+		print('# 1. Simple Perceptron')
+		# part 1
+		(lr1, lr2, lr3) = cross_validate(training_cross_val, simple_perceptron_wrapper, perceptron_test, 10)
+		print((lr1, lr2, lr3))
+		# part 2
+		weights = np.array([0.001 for j in range(num_feats)])
+		bias = 0.001
+		ptd = partial(perceptron_test, test_data=training_dev)
+		(weights, bias) = simple_perceptron(training_dev, weights, bias, 0.1, 20, ptd)
+		# part 3
+		test_acc = perceptron_test(training_test, weights, bias)
+		print(test_acc)
+
+	if do_dynamic:
+		# 2. Dynamic Perceptron
+		print('\n# 2. Dynamic Perceptron')
+		(lr1, lr2, lr3) = cross_validate(training_cross_val, dynamic_perceptron_wrapper, perceptron_test, 10)
+		print((lr1, lr2, lr3))
+		# part 2
+		weights = np.array([0.001 for j in range(num_feats)])
+		bias = 0.001
+		ptd = partial(perceptron_test, test_data=training_dev)
+		(weights, bias) = dynamic_perceptron(training_dev, weights, bias, 0.1, 20, ptd)
+		# part 3
+		test_acc = perceptron_test(training_test, weights, bias)
+		print(test_acc)
+
+
+	if do_margin:
+		# 3. Margin Perceptron
+		print('\n# 3. Margin Perceptron')
+		(lr1_m1, lr1_m2, lr1_m3, lr2_m1, lr2_m2, lr2_m3, lr3_m1, lr3_m2, lr3_m3) = cross_validate(training_cross_val, margin_perceptron_wrapper, perceptron_test, 10, margins=True)
+		print((lr1_m1, lr1_m2, lr1_m3, lr2_m1, lr2_m2, lr2_m3, lr3_m1, lr3_m2, lr3_m3))
+		# part 2
+		weights = np.array([0.001 for j in range(num_feats)])
+		bias = 0.001
+		ptd = partial(perceptron_test, test_data=training_dev)
+		(weights, bias) = margin_perceptron(training_dev, weights, bias, 1, 0.1, 20, ptd)
+		# part 3
+		test_acc = perceptron_test(training_test, weights, bias)
+		print(test_acc)
+
+
+	if do_averaged:
+		# 4. Averaged Perceptron
+		print('\n# 4. Averaged Perceptron')
+		(lr1, lr2, lr3) = cross_validate(training_cross_val, avgd_perceptron_wrapper, perceptron_test, 10)
+		print(lr1, lr2, lr3)
+		# part 2
+		weights = np.array([0.001 for j in range(num_feats)])
+		bias = 0.001
+		ptd = partial(perceptron_test, test_data=training_dev)
+		(weights, bias) = avgd_perceptron(training_dev, [weights, weights], [bias, bias], 1, 20, ptd)
+		# part 3
+		test_acc = perceptron_test(training_test, weights, bias)
+		print(test_acc)
+
+	if do_aggr_avg:
+		# 5. Aggressive Averaged Perceptron
+		print('\n# 5. Aggressive Averaged Perceptron')
+		(lr1_m1, lr1_m2, lr1_m3, lr2_m1, lr2_m2, lr2_m3, lr3_m1, lr3_m2, lr3_m3) = cross_validate(training_cross_val, aggr_perceptron_wrapper, perceptron_test, 10, margins=True)
+		print(lr1_m1, lr1_m2, lr1_m3, lr2_m1, lr2_m2, lr2_m3, lr3_m1, lr3_m2, lr3_m3)
+		# # part 2
+		# weights = np.array([0.001 for j in range(num_feats)])
+		# bias = 0.001
+		# ptd = partial(perceptron_test, test_data=training_dev)
+		# (weights, bias) = avgd_perceptron(training_dev, [weights, weights], [bias, bias], 1, 20, ptd)
+		# # part 3
+		# test_acc = perceptron_test(training_test, weights, bias)
+		# print(test_acc)
